@@ -1,0 +1,43 @@
+# Merges each branch claude/cards-… into main as soon as a routine pushes it, then deletes it.
+# Always a real merge (never squash or rebase) and never a deletion before the merge: the site,
+# the PRs and Facebook link the images by commit, so those commits must stay in main's history.
+# Only image files are merged automatically; a branch with anything else waits for the owner.
+name: Merge image branches
+
+on:
+  push:
+    branches: ['claude/cards-**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: merge-into-main
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge into main and delete the branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git fetch origin "$BRANCH"; then
+            echo "$BRANCH is already merged and deleted"
+            exit 0
+          fi
+          other=$(git diff --name-only HEAD...FETCH_HEAD | grep -Eiv '[.](jpe?g|png|webp)$' || true)
+          if [ -n "$other" ]; then
+            echo "Left for the owner: $BRANCH changes files that are not images:"
+            printf '%s\n' "$other"
+            exit 0
+          fi
+          git merge --no-ff FETCH_HEAD -m "Merge branch '$BRANCH'"
+          git push origin main
+          git push origin --delete "$BRANCH"
